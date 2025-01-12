@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const postRouter = require('routers/posts')
 require('dotenv').config();
 
 const app = express();
@@ -18,36 +19,16 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir);
 }
 
-// Serve uploaded files statically
-app.use('/uploads', express.static(path.join(__dirname, uploadDir)));
+// serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, uploaddir)));
 
-// Multer configuration for image uploads
-const storage = multer.diskStorage({
-    destination: function(req, file, cb) {
-        cb(null, uploadDir);
-    },
-    filename: function(req, file, cb) {
-        cb(null, Date.now() + '-' + file.originalname);
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
-        if (allowedTypes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Invalid file type'));
-        }
-    }
-});
+app.use('/', postRouter)
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => console.error('MongoDB connection error:', err));
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

@@ -7,9 +7,29 @@ const router = express.Router();
 const MAX_POSTS = 100; // Maximum number of parent posts
 const MAX_REPLIES = 200; // Maximum number of replies per post (set your preferred limit)
 
-// Multer setup for memory storage
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
+// multer configuration for image uploads
+const storage = multer.diskstorage({
+    destination: function(req, file, cb) {
+        cb(null, uploaddir);
+    },
+    filename: function(req, file, cb) {
+        cb(null, date.now() + '-' + file.originalname);
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
+    limits: { filesize: 5 * 1024 * 1024 }, // 5mb limit
+    filefilter: (req, file, cb) => {
+        const allowedtypes = ['image/jpeg', 'image/png', 'image/gif'];
+        if (allowedtypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new error('invalid file type'));
+        }
+    }
+});
+
 
 async function createPost(body) {
     const count = await Post.countDocuments()
