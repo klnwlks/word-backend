@@ -1,131 +1,94 @@
-const express = require("express");
-const router = express.Router();
-const Post = require('../models/post')
-const Rank = require('../models/rank')
+const express = require('express');
+const Post = require('./models/Post'); // Assuming the schema is saved in `models/Post.js`
 
-// Set up multer storage configuration
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/'); // Directory to save files
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+const router = express.Router();
+
+const MAX_POSTS = 100; // Maximum number of parent posts
+const MAX_REPLIES = 200; // Maximum number of replies per post (set your preferred limit)
+
+async function createPost(body) {
+    const count = await Post.countDocuments()
+    const newPost = new Post({
+        content: body.content,
+        title: body.title,
+        image: body.image, 
+        name: body.name,
+        filename: body.image.fn,
+        parent: Post.findOne({id: body.parent}) || null
+    });
+
+    if (body.parent && Post.findOne({id: body.parent}).replies < MAX_REPLIES) {
+        await Post.findOneandUpdate(
+            {id: body.parent},
+            {lastUpdated: Date.now}
+        )
+    }
+
+    await newPost.save()
+
+    // delete oldest
+    if (count > MAX_POSTS) {
+        const excess = count - MAX_POSTS
+        // find all posts that are beyond the limti
+        const threadsToDelete = await Post.find().sort({ lastUpdated: 1}).limit(excess)
+
+        // list of ids that belong to posts to be deleted
+        const replies = await threadsToDelete.map(post => post.id)
+        
+        // delete replies first, them post
+        await Post.deleteMany({parent: { $in: replies }})
+        await Post.deleteMany({id: { $in: replies }})
+
+        console.log('deleted all excess posts')
+    }
+}
+
+// Route to get all posts
+router.get('/', async (req, res) => {
+  try {
+    // find all parents, dont include image in return
+    const posts = await Post.find({ parent: null}, {image: 0}).sort({ lastUpdated: -1})
+    res.json(posts)
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching posts' });
   }
 });
 
-// Multer upload configuration
-const upload = multer({ storage: storage });
 
-// Directory for static files (if you need to serve uploaded files)
-// TODO:
-// - file handling
-// - frontend obviously
+// Route to create a new post
+router.post('/', async (req, res) => {
+  try {
+    // Create and save the new post
+    createPost(req.body)
+    res.status(200)
+  } catch (err) {
+    res.status(500).json({ error: 'Error creating post' });
+  }
+});
 
-async function updateModel(id) {
-    const rank = await Rank.findOne()
-    if (rank.posts.length > 100) {
-        const last = await Rank.findOne({posts: -1})
-        const res = await Rank.findOneAndUpdate( {
-            $pop: {posts: last}
-        })
-
-        await Post.findOneAndDelete({id: last})
-
-        console.log('removed post', res)
-    }
-
-    try {
-        const post = await Post.findOneAndUpdate({
-            $pull: {posts: id},
-        })
-        console.log('remove post from stack', post)
-    } catch {pass} 
-
-    const post = await Post.findOneAndUpdate({
-        $push: {posts: id}
-    })
-    console.log('added post to top of stack', post)
-}
-
-// catalog
-router.get('/', async (req, res) => {
-    res.send('HELLO')
-    try {
-        const {postID} = req.param.id
-        if (postID) {
-            const post = await Post.findOne({id: postID})
-            if (!post) return res.status(404)
-
-            const replies = await Post.find({parent: postID}).sort({createdAt: -1})
-            return res.json({post, replies})
-        }
-
-        rank = await Rank.findOne()
-        const posts = await Post.find({parent: null})
-        return res.json({posts, rank})
-
-    } catch {
-        return res.status(404)
-    }
-})
-
-// make post
-router.post('/', upload.single('file'), async (req, res) => {
-    try {
-        const {content, name, title} = req.body
-        const post = new Post({
-            content,
-            date: Date.now(),
-            parent: null,
-            name: name || 'λ',
-            title: title || null,
-            id: await Post.findOne().sort({id: -1}).id + 1,
-            img: req.file.buffer || null
-        })
-
-        updateModel(post.id)
-        const spost = await post.save()
-        res.status(201).json(spost)
-    } catch(e) {
-        console.log(e.message)
-        return res.json(e)
-    }
-})
-
-// reply to post
-router.post('/post/:postID',  upload.single('file'), async (req, res) => {
-    try {
-        const {content, parent, name} = req.body
-        const post = new Post({
-            content,
-            date: Date.now(),
-            parent: parent,
-            name: name || 'λ',
-            id: await Post.findOne().sort({id: -1}).id + 1,
-            img: req.file.buffer || null
-        })
-
-        const spost = await post.save()
-        updateModel(post.id)
-        res.status(201).json(spost)
-    } catch (e) {
-        console.log(e.message)
-        return res.json(e)
-    }
-})
-
-// update post replies
+// Route to get a post and its replies
 router.get('/post/:postID', async (req, res) => {
-    try {
-        const {parent} = req.param.id
-        const replies = await Post.find({parent: parent}).sort({createdAt: -1})
+  try {
+    const { postID } = req.params;
 
-        return res.json(replies)
-    } catch (e) {
-        console.log(e.message)
-        return res.json(e)
-    }
-})
+    const parentPost = await Post.findOne({id: postID}, {image: 0})
+    const posts = await Post.find({parent: parentPost._id}, {image: 0})
 
-module.exports = router
+    res.status(200).json({parentPost, posts})
+  } catch (err) {
+    res.status(500).json({ error: 'error finding post' })
+  }
+});
+
+// Route to create a reply to a post
+router.post('/post/:postID', async (req, res) => {
+  try {
+    const { postID } = req.params;
+    createPost(res.body)
+    res.status(200).json({error: 'reply success'})
+  } catch (err) {
+    res.status(500).json({error: 'cant reply'})
+  }
+});
+
+module.exports = router;
