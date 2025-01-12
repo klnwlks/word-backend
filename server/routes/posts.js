@@ -1,5 +1,6 @@
 const express = require('express');
 const Post = require('./models/Post'); // Assuming the schema is saved in `models/Post.js`
+const multer = require('multer')
 
 const router = express.Router();
 
@@ -21,13 +22,13 @@ async function createPost(body) {
         } : null,
         name: body.name,
         filename: body.image.fn,
-        parent: Post.findOne({id: body.parent}) || null
+        parent: await Post.findOne({id: body.parent}) || null
     });
 
     if (body.parent && Post.findOne({id: body.parent}).replies < MAX_REPLIES) {
-        await Post.findOneandUpdate(
+        await Post.findOneAndUpdate(
             {id: body.parent},
-            {lastUpdated: Date.now}
+            {lastUpdated: Date.now()}
         )
     }
 
@@ -91,7 +92,7 @@ router.get('/post/:postID', async (req, res) => {
 router.post('/post/:postID', upload.single('image'), async (req, res) => {
   try {
     const { postID } = req.params;
-    createPost(res.body)
+    createPost(req.body)
     res.status(200).json({error: 'reply success'})
   } catch (err) {
     res.status(500).json({error: 'cant reply'})
