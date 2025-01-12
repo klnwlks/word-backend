@@ -3,7 +3,21 @@ const router = express.Router();
 const Post = require('../models/post')
 const Rank = require('../models/rank')
 
+// Set up multer storage configuration
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // Directory to save files
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
 
+// Multer upload configuration
+const upload = multer({ storage: storage });
+
+// Directory for static files (if you need to serve uploaded files)
 // TODO:
 // - file handling
 // - frontend obviously
@@ -57,16 +71,17 @@ router.get('/', async (req, res) => {
 })
 
 // make post
-router.post('/', async (req, res) => {
+router.post('/', upload.single('file'), async (req, res) => {
     try {
         const {content, name, title} = req.body
         const post = new Post({
             content,
             date: Date.now(),
             parent: null,
-            name: name || 'person',
+            name: name || 'λ',
             title: title || null,
-            id: await Post.findOne().sort({id: -1}).id + 1
+            id: await Post.findOne().sort({id: -1}).id + 1,
+            img: req.file.buffer || null
         })
 
         updateModel(post.id)
@@ -79,15 +94,16 @@ router.post('/', async (req, res) => {
 })
 
 // reply to post
-router.post('/post/:postID', async (req, res) => {
+router.post('/post/:postID',  upload.single('file'), async (req, res) => {
     try {
         const {content, parent, name} = req.body
         const post = new Post({
             content,
             date: Date.now(),
             parent: parent,
-            name: name || 'person',
-            id: await Post.findOne().sort({id: -1}).id + 1
+            name: name || 'λ',
+            id: await Post.findOne().sort({id: -1}).id + 1,
+            img: req.file.buffer || null
         })
 
         const spost = await post.save()
