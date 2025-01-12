@@ -6,12 +6,19 @@ const router = express.Router();
 const MAX_POSTS = 100; // Maximum number of parent posts
 const MAX_REPLIES = 200; // Maximum number of replies per post (set your preferred limit)
 
+// Multer setup for memory storage
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
 async function createPost(body) {
     const count = await Post.countDocuments()
     const newPost = new Post({
         content: body.content,
         title: body.title,
-        image: body.image, 
+        image: body.image ? {
+            data: body.image.buffer,
+            contentType: body.image.mimetype
+        } : null,
         name: body.name,
         filename: body.image.fn,
         parent: Post.findOne({id: body.parent}) || null
@@ -56,7 +63,7 @@ router.get('/', async (req, res) => {
 
 
 // Route to create a new post
-router.post('/', async (req, res) => {
+router.post('/', upload.single('image'), async (req, res) => {
   try {
     // Create and save the new post
     createPost(req.body)
@@ -81,7 +88,7 @@ router.get('/post/:postID', async (req, res) => {
 });
 
 // Route to create a reply to a post
-router.post('/post/:postID', async (req, res) => {
+router.post('/post/:postID', upload.single('image'), async (req, res) => {
   try {
     const { postID } = req.params;
     createPost(res.body)
